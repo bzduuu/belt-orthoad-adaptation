@@ -207,11 +207,12 @@ class MVTecAD(ImageFolder):
     categories = [
         'carpet', 'grid', 'leather', 'tile', 'wood',
         'bottle', 'cable', 'capsule', 'hazelnut', 'metal_nut',
-        'pill', 'screw', 'toothbrush', 'transistor', 'zipper'
+        'pill', 'screw', 'toothbrush', 'transistor', 'zipper','belt'
     ]
 
     labels = [  # cumulative unique labels
         'good',  # common negative label
+        'defect',  # custom belt defect label
         'color', 'cut', 'hole', 'metal_contamination', 'thread',  # carpet
         'bent', 'broken', 'glue',  # grid
         'fold', 'poke',  # leather
@@ -282,9 +283,9 @@ class MVTecAD(ImageFolder):
         self.class_to_idx = class_to_idx
         self.cam = 0
 
-        image_cache_path = 'cache/.mvtecad_{}_{}'.format(category, split)
+        image_cache_path = 'cache/mvtecad_{}_{}.pt'.format(category, split)
         if os.path.isfile(image_cache_path):
-            self.image_cache = torch.load(image_cache_path)
+            self.image_cache = torch.load(image_cache_path, weights_only=False)
         else:
             self.image_cache = {}
             self.preprocess()
@@ -545,7 +546,7 @@ class KolektorSDD2(Dataset):
         self.transform = KolektorSDD.get_transform(output_size=self.output_size)
         self.normalize = T.Normalize(KolektorSDD.mean, KolektorSDD.std)
         
-        image_cache_path = 'cache/.kolektor2_{}'.format(split)
+        image_cache_path = 'cache/kolektor2_{}'.format(split)
         if os.path.isfile(image_cache_path):
             self.samples, self.masks, self.product_ids = \
                 torch.load(image_cache_path)
@@ -691,7 +692,7 @@ class STCAD(ImageFolder):
 
         image_cache_path = 'cache/.stcad_{}'.format(split)
         if os.path.isfile(image_cache_path):
-            self.image_cache = torch.load(image_cache_path)
+            self.image_cache = torch.load(image_cache_path, weights_only=False)
         else:
             self.image_cache = {}
             self.preprocess()
