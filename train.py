@@ -5,6 +5,8 @@ import logging
 import time
 import copy
 import random
+import numpy as np
+
 
 import torch
 import torch.nn as nn
@@ -21,7 +23,7 @@ from utils import *
 
 def main():
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument('--dataroot', default=os.environ['DATA'],
+    parser.add_argument('--dataroot', default=os.environ.get('DATA', '.'),
                         help='Path to the dataset')
     parser.add_argument('--dataset', default=MVTecAD.name,
                         choices=['mvtecad', 'kolektor', 'kolektor2', 'mstc'],
@@ -51,13 +53,17 @@ def main():
     parser.add_argument('--k', type=int, default=300, help='k-rank')
     parser.add_argument('--metric', type=str, default='auproc',
                         help='Evaluation metric', 
-                        choices=['auproc', 'auroc', 'fpr', 'ap'])
+                        choices=['auproc', 'auroc', 'fpr', 'ap','none'])
     parser.add_argument('--fpr', type=float, default=.3,
                         help='The false positive rate cut for PRO-curve')
     parser.add_argument('--recall', default=.95, type=float,
                         help='Normalize the score using a validation split')
     parser.add_argument('--nSamples', type=int, default=1000,
                         help='The number of samples for PRO-curve')
+    parser.add_argument('--benchmark-inference', action='store_true',
+                    default=False, help='Measure test inference speed')
+    parser.add_argument('--benchmark-warmup', type=int, default=10,
+                    help='Number of warmup test batches ignored in benchmark')
     parser.add_argument('--verbose', action='store_true',
                         default=False, help='Log verbosity')  # for analysis
     parser.add_argument('--experiment', default=None,
@@ -205,11 +211,16 @@ def main():
     # calculate scores
     scores = 0
     loader = loaders[-1]
-    # prepare predictions and annotations
+
     pred = None
     gt = None
+
+    benchmark_batch_times = []
+    benchmark_image_times = []
+
     for j, data in enumerate(tqdm(loader)):
         x, y, a, c = data[:4]
+
         if pred is None:
             mask = torch.Tensor(len(loader.dataset),
                                 x.size(2), x.size(3)).zero_()
@@ -218,14 +229,83 @@ def main():
             gt = torch.Tensor(len(loader.dataset),
                               x.size(2), x.size(3)).zero_()
             typ = torch.LongTensor(len(loader.dataset))
+
         gt[j * loader.batch_size: j * loader.batch_size + x.size(0)] = a
+        mask[j * loader.batch_size: j * loader.batch_size + x.size(0)] = a
         typ[j * loader.batch_size: j * loader.batch_size + x.size(0)] = y
+
+        current_batch_size = x.size(0)
+
+        if args.benchmark_inference and torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        t0 = time.perf_counter()
 
         x = x.to(device)
         score = objective(x, model, args, val_scores)
         score = score.cpu()
+
+        if args.benchmark_inference and torch.cuda.is_available():
+            torch.cuda.synchronize()
+
+        t1 = time.perf_counter()
+
+        if args.benchmark_inference and j >= args.benchmark_warmup:
+            elapsed = t1 - t0
+            benchmark_batch_times.append(elapsed)
+            benchmark_image_times.append(elapsed / current_batch_size)
+
         pred[j * loader.batch_size: j *
                  loader.batch_size + x.size(0)] = score
+
+    if args.benchmark_inference:
+        if len(benchmark_batch_times) > 0:
+            batch_times = np.array(benchmark_batch_times)
+            image_times = np.array(benchmark_image_times)
+
+            mean_batch_ms = batch_times.mean() * 1000
+            median_batch_ms = np.median(batch_times) * 1000
+            p95_batch_ms = np.percentile(batch_times, 95) * 1000
+            p99_batch_ms = np.percentile(batch_times, 99) * 1000
+
+            mean_image_ms = image_times.mean() * 1000
+            median_image_ms = np.median(image_times) * 1000
+            p95_image_ms = np.percentile(image_times, 95) * 1000
+            p99_image_ms = np.percentile(image_times, 99) * 1000
+
+            fps_images = 1.0 / image_times.mean()
+            fps_batches = 1.0 / batch_times.mean()
+
+            benchmark_text = (
+                "\n"
+                "Inference benchmark\n"
+                f"model: {args.model}\n"
+                f"k: {args.k}\n"
+                f"batch_size: {args.batch_size}\n"
+                f"workers: {args.workers}\n"
+                f"device: {device}\n"
+                f"warmup_batches: {args.benchmark_warmup}\n"
+                f"measured_batches: {len(batch_times)}\n"
+                f"mean_batch_ms: {mean_batch_ms:.3f}\n"
+                f"median_batch_ms: {median_batch_ms:.3f}\n"
+                f"p95_batch_ms: {p95_batch_ms:.3f}\n"
+                f"p99_batch_ms: {p99_batch_ms:.3f}\n"
+                f"mean_image_ms: {mean_image_ms:.3f}\n"
+                f"median_image_ms: {median_image_ms:.3f}\n"
+                f"p95_image_ms: {p95_image_ms:.3f}\n"
+                f"p99_image_ms: {p99_image_ms:.3f}\n"
+                f"fps_images: {fps_images:.2f}\n"
+                f"fps_batches: {fps_batches:.2f}\n"
+            )
+
+            print(benchmark_text)
+            logger.info(benchmark_text)
+
+            with open(os.path.join(args.experiment, "benchmark_inference.txt"),
+                      "w", encoding="utf-8") as f:
+                f.write(benchmark_text)
+        else:
+            logger.info("Inference benchmark skipped: not enough batches after warmup.")
 
     n = num_samples_per_category_to_save = len(loader.dataset)
     types = []
@@ -243,6 +323,9 @@ def main():
     data = (mask[m].clone(), pred[m].clone(), types, product_ids)
     torch.save(data, os.path.join(
         args.experiment, '{}.pth'.format(loader.dataset.category)))
+    if args.metric == 'none':
+        logger.info('Metric skipped: test set contains only normal belt images.')
+        return
     pred = pred.to(device)
     gt = gt.to(device)
     typ = typ.to(device)
