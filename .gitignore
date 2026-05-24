@@ -127,3 +127,43 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# =========================
+# Diploma project data/files
+# =========================
+
+# local project data
+data/
+raw_photos/
+raw_sample/
+raw_defect_photos/
+raw_defect_sample/
+annotations/
+annotations_defect_roi/
+roi_aligned/
+roi_defect_aligned/
+patches/
+patches_pilot_v1/
+patches_pilot_v2/
+patches_defect_test/
+belt_dataset_v2/
+belt_mvtec/
+belt_mvtec_defect_test/
+
+# generated outputs
+orthoad_runs/
+cache/
+*.pth
+*.pt
+*.onnx
+*.ckpt
+
+# heavy/confidential files
+*.zip
+*.rar
+*.7z
+*.pdf
+
+# system files
+.DS_Store
+Thumbs.db
