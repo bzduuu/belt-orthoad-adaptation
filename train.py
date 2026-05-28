@@ -137,13 +137,21 @@ def main():
     model.to(device)
 
     # data, optimizer preparation
-    loaders = checkout_dataloader(args, ['train', 'val', 'test'])  # train, val
-    logger.info('Hey dude, for train, nSamples={:4d}, nIters={:3d}'.format(
-        *repr_loader(loaders[0])))
-    logger.info('          for valid, nSamples={:4d}, nIters={:3d}'.format(
-        *repr_loader(loaders[1])))
-    logger.info('          for test, nSamples={:4d}, nIters={:3d}'.format(
-        *repr_loader(loaders[2])))
+    if args.use_val_norm:
+        loaders = checkout_dataloader(args, ['train', 'val', 'test'])
+        logger.info('Hey dude, for train, nSamples={:4d}, nIters={:3d}'.format(
+            *repr_loader(loaders[0])))
+        logger.info('          for valid, nSamples={:4d}, nIters={:3d}'.format(
+            *repr_loader(loaders[1])))
+        logger.info('          for test, nSamples={:4d}, nIters={:3d}'.format(
+            *repr_loader(loaders[2])))
+    else:
+        loaders = checkout_dataloader(args, ['train', 'test'])
+        logger.info('Hey dude, for train, nSamples={:4d}, nIters={:3d}'.format(
+            *repr_loader(loaders[0])))
+        logger.info('          for test, nSamples={:4d}, nIters={:3d}'.format(
+            *repr_loader(loaders[1])))
+        logger.info('Val loader skipped (--use-val-norm not set)')
 
     # features
     logger.info('Extract features...')
