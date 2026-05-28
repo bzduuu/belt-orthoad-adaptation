@@ -19,6 +19,7 @@ from optimizer import *
 from dataset import *
 from model import *
 from utils import *
+from tqdm import tqdm
 
 
 def main():
@@ -64,6 +65,13 @@ def main():
                     default=False, help='Measure test inference speed')
     parser.add_argument('--benchmark-warmup', type=int, default=10,
                     help='Number of warmup test batches ignored in benchmark')
+    parser.add_argument('--use-val-norm', action='store_true',
+                    default=False,
+                    help='Normalize anomaly scores using validation '
+                         'set statistics (per-position mean/std on good '
+                         'samples). Helps to compensate for textured '
+                         'background of belt surface.')
+
     parser.add_argument('--verbose', action='store_true',
                         default=False, help='Log verbosity')  # for analysis
     parser.add_argument('--experiment', default=None,
@@ -174,9 +182,11 @@ def main():
     # objective
     objective = checkout_objective(args)
 
-    if True:  # Do not use validation scores
+    if not args.use_val_norm:  # default: do not use validation scores
         val_scores = [torch.zeros(1,1), torch.ones(1,1)]
+        logger.info('Validation score normalization: DISABLED')
     else:  # validation score normalization
+        logger.info('Validation score normalization: ENABLED')
         logger.info('Computing the means and stds for a validation set')
 
         val_scores = [[], []]
