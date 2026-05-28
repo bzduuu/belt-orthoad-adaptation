@@ -284,13 +284,28 @@ class MVTecAD(ImageFolder):
         self.cam = 0
 
         image_cache_path = 'cache/mvtecad_{}_{}.pt'.format(category, split)
-        if os.path.isfile(image_cache_path):
+        fingerprint = self.compute_dataset_fingerprint(dataroot, category, split)
+        fingerprint_path = image_cache_path + '.fingerprint'
+
+        cache_valid = False
+        if os.path.isfile(image_cache_path) and os.path.isfile(fingerprint_path):
+            with open(fingerprint_path, 'r') as f:
+                cached_fp = f.read().strip()
+            if cached_fp == fingerprint:
+                cache_valid = True
+            else:
+                print(f'Dataset changed, invalidating cache: {image_cache_path}')
+
+        if cache_valid:
             self.image_cache = torch.load(image_cache_path, weights_only=False)
         else:
             self.image_cache = {}
             self.preprocess()
             print('Image cache saved.')
             torch.save(self.image_cache, image_cache_path)
+            with open(fingerprint_path, 'w') as f:
+                f.write(fingerprint)
+
 
         self.transform = T.Compose([
             self.transform,
@@ -385,6 +400,36 @@ class MVTecAD(ImageFolder):
     def denorm(x):
         return x * c2chw(torch.Tensor(MVTecAD.std)) + \
             c2chw(torch.Tensor(MVTecAD.mean))
+    
+    @staticmethod
+    def compute_dataset_fingerprint(dataroot, category, split):
+        """Compute a hash representing current state of dataset files.
+    
+        Includes file paths, sizes, and modification times for all images
+        in the relevant split folders.
+        """
+        import hashlib
+        folder = os.path.join(dataroot, category,
+                            'train' if 'val' == split else split)
+        if 'test' == split:
+            gt_folder = os.path.join(dataroot, category, 'ground_truth')
+            folders = [folder, gt_folder]
+        else:
+            folders = [folder]
+    
+        entries = []
+        for f in folders:
+            if not os.path.isdir(f):
+                continue
+            for root, _, files in os.walk(f):
+                for name in sorted(files):
+                    if name.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
+                        p = os.path.join(root, name)
+                        st = os.stat(p)
+                        entries.append(f'{p}|{st.st_size}|{st.st_mtime_ns}')
+        fingerprint_src = '\n'.join(sorted(entries))
+        return hashlib.md5(fingerprint_src.encode('utf-8')).hexdigest()
+
 
 
 class KolektorSDD(Dataset):
