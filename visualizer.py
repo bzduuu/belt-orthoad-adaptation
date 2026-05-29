@@ -177,20 +177,26 @@ class SingleDataVisualizer(DataVisualizer):
         # update images
         self.ax[0].imshow(chw2hwc(self.post_fn(x)))
 
+        # prediction in jet
+        sc_out = pred[self.idx]
+
+        if self.args.threshold is not None:
+            threshold = self.args.threshold
+        else:
+            threshold = 12 if 'kolektor' in self.dataset.name else 20
+
+        # build predicted binary mask from anomaly map
+        pred_mask = sc_out > threshold
+
         # mask as outlines
         options = {'padding': 3, 'thickness': 1, 'fill': 1}
         gt_out = DataVisualizer.outlined(
             self.post_fn(x), a,
             color_channel=1, **options)
         pr_out = DataVisualizer.outlined(
-            gt_out, mask[self.idx] > 0, color_channel=2, **options)
+            gt_out, pred_mask, color_channel=2, **options)
 
         self.ax[2].imshow(chw2hwc(pr_out))
-
-        # prediction in jet
-        sc_out = pred[self.idx]
-        threshold = 15 if 'kolektor' == self.dataset.name \
-            else 20
 
         if True:  # transparent colormap
             self.ax[1].imshow(chw2hwc(self.post_fn(x)))
@@ -213,7 +219,7 @@ class SingleDataVisualizer(DataVisualizer):
 
 if '__main__' == __name__:
     parser = argparse.ArgumentParser(add_help=True)
-    parser.add_argument('--dataroot', default=os.environ['DATA'],
+    parser.add_argument('--dataroot', default=os.environ.get('DATA', '.'),
                         help='Path to the dataset')
     parser.add_argument('--dataset', default=MVTecAD.name,
                         help='Dataset to train')
@@ -232,6 +238,8 @@ if '__main__' == __name__:
                         help='path to the trained model')
     parser.add_argument('--num_samples', default=10, type=int,
                         help='The number of samples to visualize')
+    parser.add_argument('--threshold', default=None, type=float,
+                    help='Threshold for binary anomaly mask. If None, use dataset default')
 
     # default settings
     args = parser.parse_args()
@@ -255,7 +263,22 @@ if '__main__' == __name__:
     dataset = loader.dataset
     category = dataset.category
     path = get_path_with_new_file(args.ckpt, '{}.pth'.format(category))
-    data = torch.load(path, map_location=torch.device('cpu'))
-    path_pdf = get_path_with_new_file(args.ckpt, '{}.pdf'.format(category))
+    data = torch.load(path, map_location=torch.device('cpu'), weights_only=False)
+    #path_pdf = get_path_with_new_file(args.ckpt, '{}.pdf'.format(category)) раньше  так было, я зохотел чтобы у пдф было говорящеее имя
+    
+    ckpt_dir = os.path.dirname(args.ckpt)
+    exp_name = os.path.basename(ckpt_dir)
+
+    if args.threshold is not None:
+        thr_text = f"thr{args.threshold:g}"
+    else:
+        default_thr = 12 if 'kolektor' in dataset.name else 20
+        thr_text = f"thr{default_thr:g}"
+
+    pdf_name = f"{category}__{exp_name}__{thr_text}.pdf"
+    path_pdf = os.path.join(ckpt_dir, pdf_name)
+
+    args.num_samples = min(args.num_samples, len(dataset))
+    print(f"num_samples limited to {args.num_samples}")
     SingleDataVisualizer(dataset, data, dataset.denorm, args, path_pdf)
     exit()
