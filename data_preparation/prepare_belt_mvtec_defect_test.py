@@ -5,6 +5,12 @@ import numpy as np
 import json
 
 
+#  НОВОЕ
+# False = полная пересборка (удаляет всё и собирает заново)
+# True  = только дефектная часть (train/good и test/good не трогаются)
+DEFECT_ONLY = True
+
+
 
 project_dir = Path.cwd()
 
@@ -16,8 +22,22 @@ ann_src = project_dir / "annotations_defect_masks"
 out_root = project_dir / "belt_mvtec_defect_test"
 out_category = out_root / "belt"
 
-if out_root.exists():
-    shutil.rmtree(out_root)
+#  ИЗМЕНЕНО: удаляем только то, что нужно ===
+if DEFECT_ONLY:
+    # Удаляем только дефектную часть
+    test_defect_dir = out_category / "test" / "defect"
+    gt_defect_dir = out_category / "ground_truth" / "defect"
+    if test_defect_dir.exists():
+        shutil.rmtree(test_defect_dir)
+    if gt_defect_dir.exists():
+        shutil.rmtree(gt_defect_dir)
+    print(f"[DEFECT_ONLY] Удалены: {test_defect_dir} и {gt_defect_dir}")
+    print(f"[DEFECT_ONLY] train/good и test/good остаются нетронутыми")
+else:
+    # Полная пересборка (старое поведение)
+    if out_root.exists():
+        shutil.rmtree(out_root)
+
 
 train_dst = out_category / "train" / "good"
 test_good_dst = out_category / "test" / "good"
@@ -28,13 +48,16 @@ gt_defect_dst = out_category / "ground_truth" / "defect"
 for d in [train_dst, test_good_dst, test_defect_dst, gt_good_dst, gt_defect_dst]:
     d.mkdir(parents=True, exist_ok=True)
 
-for p in train_src.glob("*"):
-    if p.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-        shutil.copy2(p, train_dst / p.name)
+# ИЗМЕНЕНО: пропускаем копирование train/good и test/good в режиме defect_only
+if not DEFECT_ONLY:
+    for p in train_src.glob("*"):
+        if p.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            shutil.copy2(p, train_dst / p.name)
 
-for p in normal_test_src.glob("*"):
-    if p.suffix.lower() in [".jpg", ".jpeg", ".png"]:
-        shutil.copy2(p, test_good_dst / f"normal_{p.name}")
+    for p in normal_test_src.glob("*"):
+        if p.suffix.lower() in [".jpg", ".jpeg", ".png"]:
+            shutil.copy2(p, test_good_dst / f"normal_{p.name}")
+
 
 skipped_without_mask = 0
 saved_defects = 0
@@ -87,8 +110,11 @@ for p in defect_src.glob("*"):
 
     saved_defects += 1
 
-dummy = Image.fromarray(np.zeros((256, 256), dtype=np.uint8))
-dummy.save(gt_good_dst / "dummy.png")
+#  ИЗМЕНЕНО: dummy.png пишем только при полной пересборке
+if not DEFECT_ONLY:
+    dummy = Image.fromarray(np.zeros((256, 256), dtype=np.uint8))
+    dummy.save(gt_good_dst / "dummy.png")
+# 
 
 print("Готово")
 print(f"train/good: {len(list(train_dst.glob('*')))}")
